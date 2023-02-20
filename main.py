@@ -63,7 +63,7 @@ def get_objective(dataset_file, model_class, dataset_class):
         train_ds, valid_ds = Subset(data, train_ixs), Subset(data, valid_ixs)
         train_loader = DataLoader(train_ds, batch_size=32,
                                   sampler=StratifiedSampler(
-                                      torch.from_numpy(data.e[train_ixs].squeeze()), batch_size=32))
+                                      torch.from_numpy(data.e[train_ixs].squeeze()), batch_size=32), drop_last=True)
         valid_loader = DataLoader(valid_ds, batch_size=32, shuffle=False)
 
         if model_class.__name__ == 'DeepSurv':
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     # TODO: 조건문으로 경우의 수 나누기
-    dataset_file = "./data/whas/whas_train_test.h5"
+    dataset_file = "./data/metabric/metabric_IHC4_clinical_train_test.h5"
     model_class = DynamicDeepSurv
     dataset_class = SurvivalDataset2
 
