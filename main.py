@@ -4,11 +4,50 @@ import numpy as np
 from models import DeepSurv, DynamicDeepSurv, NegativeLogLikelihood, EventLoss
 from datasets import SurvivalDataset, SurvivalDataset2
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Sampler
 from sklearn.model_selection import train_test_split
 import optuna
 
 from utils import AverageMeter, c_index, bootstrap_eval, assign_device, seed_all, adjust_learning_rate
+
+
+class StratifiedSampler(Sampler):
+    """Stratified Sampling
+    Provides equal representation of target classes in each batch
+    """
+
+    def __init__(self, class_vector, batch_size):
+        """
+        Arguments
+        ---------
+        class_vector : torch tensor
+            a vector of class labels
+        batch_size : integer
+            batch_size
+        """
+        self.n_splits = int(class_vector.size(0) / batch_size)
+        self.class_vector = class_vector
+
+    def gen_sample_array(self):
+        try:
+            from sklearn.model_selection import StratifiedShuffleSplit
+        except:
+            print("Need scikit-learn for this functionality")
+        import numpy as np
+
+        s = StratifiedShuffleSplit(n_splits=self.n_splits, test_size=0.7)
+        X = torch.randn(self.class_vector.size(0), 2).numpy()
+        y = self.class_vector.numpy()
+        s.get_n_splits(X, y)
+
+        train_index, test_index = next(s.split(X, y))
+        return np.hstack([train_index, test_index])
+
+    def __iter__(self):
+        return iter(self.gen_sample_array())
+
+    def __len__(self):
+        return len(self.class_vector)
 
 
 def get_objective(dataset_file, model_class, dataset_class):
@@ -22,8 +61,10 @@ def get_objective(dataset_file, model_class, dataset_class):
                                                 shuffle=True,
                                                 stratify=data.e)
         train_ds, valid_ds = Subset(data, train_ixs), Subset(data, valid_ixs)
-        train_loader = DataLoader(train_ds, batch_size=len(train_ds), shuffle=True)
-        valid_loader = DataLoader(valid_ds, batch_size=len(valid_ds), shuffle=False)
+        train_loader = DataLoader(train_ds, batch_size=32,
+                                  sampler=StratifiedSampler(
+                                      torch.from_numpy(data.e[train_ixs].squeeze()), batch_size=32))
+        valid_loader = DataLoader(valid_ds, batch_size=32, shuffle=False)
 
         if model_class.__name__ == 'DeepSurv':
             model = model_class(data.ndim, trial)
