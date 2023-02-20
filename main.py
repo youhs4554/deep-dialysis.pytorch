@@ -113,7 +113,7 @@ def get_objective(dataset_file, model_class, dataset_class):
                 end='', flush=False)
 
         print()
-        return valid_score
+        return best_score
 
     return objective
 
