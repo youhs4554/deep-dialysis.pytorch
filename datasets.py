@@ -20,7 +20,7 @@ class SurvivalDataset(torch.utils.data.Dataset):
         return X, e, y
 
     def _normalize(self):
-        self.X = (self.X - self.X.min(axis=0)) / (self.X.max(axis=0) - self.X.min(axis=0))
+        self.X = (self.X - self.X.mean(axis=0)) / self.X.std(axis=0)
 
     def __getitem__(self, ix):
         return {
