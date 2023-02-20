@@ -138,7 +138,7 @@ class EventLoss(nn.Module):
         self.beta = beta
 
     def forward(self, risk_pred, event_seq, y, e, s):
-        risk_score = torch.sum(s * event_seq, dim=1)
+        risk_score = e.squeeze(1) * torch.sum(s * event_seq, dim=1) / (y.squeeze(1) / 30).ceil()
 
         loss1 = self.criterion1(risk_pred, y, e)  # NegativeLogLikelihood (used in DeepSurv)
         loss2 = self.criterion2(event_seq, s)  # CE (event sequence prediction)
