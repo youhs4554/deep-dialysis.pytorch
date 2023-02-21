@@ -99,14 +99,15 @@ def get_objective(dataset_file, model_class, dataset_class):
                     print(f"\nEarly Stopping with best_score={best_score:.8f}...")
                     return best_score
 
+            trial_score = trial.study.best_value if len(trial.study.trials) > 1 else 0.0
+
             # Save best trial's model only
-            if len(trial.study.trials) > 1:
-                if valid_score > trial.study.best_value:
-                    torch.save({
-                        'model': model.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'epoch': epoch}, MODEL_SAVE_PATH
-                    )
+            if (valid_score > trial_score) and (best_score == valid_score):
+                torch.save({
+                    'model': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'epoch': epoch}, MODEL_SAVE_PATH
+                )
 
             print(
                 f'\rEpoch: {epoch}\tLoss: {train_loss:.8f}({valid_loss:.8f})\tc-index: {train_score:.8f}({valid_score:.8f})',
