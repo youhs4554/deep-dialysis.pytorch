@@ -121,7 +121,7 @@ class ConLoss(nn.Module):
         y = y.cpu().numpy()
         e = e.cpu().numpy()
         cindex = Variable(
-            torch.tensor(concordance_index(y, -risk_score, e)))\
+            torch.tensor(concordance_index(y, -risk_score, e))) \
             .to(device)
         cindex.requires_grad_(True)
         return 1.0 - cindex
@@ -142,6 +142,21 @@ class EventLoss(nn.Module):
 
         loss1 = self.criterion1(risk_pred, y, e)  # NegativeLogLikelihood (used in DeepSurv)
         loss2 = self.criterion2(event_seq, s)  # BCE (event sequence prediction)
-        loss3 = self.criterion3(risk_score, y, e) # ConLoss (1.0 - cindex)
+        loss3 = self.criterion3(risk_score, y, e)  # ConLoss (1.0 - cindex)
 
         return loss1 + self.alpha * loss2 + self.beta * loss3
+
+
+def CPH(trial):
+    from sksurv.linear_model import CoxnetSurvivalAnalysis
+    return CoxnetSurvivalAnalysis(l1_ratio=trial.suggest_float('l1_ratio', 0.5, 1.0),
+                                  alpha_min_ratio=0.01)
+
+
+def RSF(trial):
+    from sksurv.ensemble import RandomSurvivalForest
+    return RandomSurvivalForest(n_estimators=trial.suggest_int('n_estimators', 100, 1000),
+                                max_depth=trial.suggest_int('max_depth', 1, 10),
+                                min_samples_split=trial.suggest_int('min_samples_split', 5, 15),
+                                min_samples_leaf=trial.suggest_int('min_samples_leaf', 3, 10),
+                                n_jobs=-1)

@@ -1,18 +1,20 @@
 import os
 import numpy as np
-
-from models import DeepSurv, DynamicDeepSurv, NegativeLogLikelihood, EventLoss
+import models
 from datasets import SurvivalDataset, SurvivalDataset2
 import torch
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import train_test_split
 import optuna
+import joblib
 
-from utils import AverageMeter, c_index, bootstrap_eval, assign_device, seed_all, adjust_learning_rate
+from utils import AverageMeter, c_index, bootstrap_eval_torch, assign_device, seed_all, adjust_learning_rate, \
+    to_sksurv_format, bootstrap_eval_sksurv, create_logger
+import prettytable as pt
 
 
-def get_objective(dataset_file, model_class, dataset_class):
-    def objective(trial):
+def get_objective(dataset_file, model_class, dataset_class, backend):
+    def objective_torch(trial):
 
         seed_all(42)
 
@@ -27,11 +29,11 @@ def get_objective(dataset_file, model_class, dataset_class):
 
         if model_class.__name__ == 'DeepSurv':
             model = model_class(data.ndim, trial)
-            criterion = NegativeLogLikelihood()
+            criterion = models.NegativeLogLikelihood()
         elif model_class.__name__ == 'DynamicDeepSurv':
             model = model_class(data.ndim, data.max_length, trial)
-            criterion = EventLoss(alpha=trial.suggest_float('criterion__alpha', 0.0, 10.0),
-                                  beta=trial.suggest_float('criterion__beta', 0.0, 10.0))
+            criterion = models.EventLoss(alpha=trial.suggest_float('criterion__alpha', 0.0, 10.0),
+                                         beta=trial.suggest_float('criterion__beta', 0.0, 10.0))
 
         base_lr = trial.suggest_float("base_lr", 1e-4, 5e-3)
         lr_decay_rate = trial.suggest_float("lr_decay_rate", 1e-4, 1e-2)
@@ -116,45 +118,115 @@ def get_objective(dataset_file, model_class, dataset_class):
         print()
         return best_score
 
-    return objective
+    def objective_sksurv(trial):
+        seed_all(42)
+
+        data = dataset_class(dataset_file, is_train=True)
+
+        X, e, y = data.X, data.e, data.y
+        Y = to_sksurv_format(e, y)
+
+        X_train, X_valid, Y_train, Y_valid = train_test_split(X, Y,
+                                                              test_size=0.2,
+                                                              shuffle=True,
+                                                              stratify=e)
+
+        model = model_class(trial)
+        model.fit(X_train, Y_train)
+
+        valid_score = model.score(X_valid, Y_valid)
+
+        trial_score = trial.study.best_value if len(trial.study.trials) > 1 else 0.0
+
+        # Save best trial's model only
+        if (valid_score > trial_score):
+            joblib.dump(model, MODEL_SAVE_PATH)
+
+        return model.score(X_valid, Y_valid)
+
+    if backend == 'torch':
+        return objective_torch
+    elif backend == 'sksurv':
+        return objective_sksurv
 
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, choices=['DeepSurv', 'DynamicDeepSurv', 'CPH', 'RSF'],
+                        help='which model to use')
+    parser.add_argument('--epochs', type=int, default=500, help='training epochs')
+    parser.add_argument('--trials', type=int, default=30, help='optuna trials')
+    args = parser.parse_args()
+
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    EPOCHS = 500
-    NB_TRIALS = 30
+    EPOCHS = args.epochs
+    NB_TRIALS = args.trials
     MODEL_DIR = './model_dir'
     PATIENCE = 50
     os.makedirs(MODEL_DIR, exist_ok=True)
 
-    # TODO: 조건문으로 경우의 수 나누기
-    dataset_file = "./data/metabric/metabric_IHC4_clinical_train_test.h5"
-    model_class = DynamicDeepSurv
-    dataset_class = SurvivalDataset2
+    data_info = [
+        ('WHAS', './data/whas/whas_train_test.h5'),
+        ('SUPPORT', './data/support/support_train_test.h5'),
+        ('METABRIC', './data/metabric/metabric_IHC4_clinical_train_test.h5'),
+        ('Rotterdam & GBSG', './data/gbsg/gbsg_cancer_train_test.h5')]
 
-    # TODO: CPH, RSF 추가 (get_objective() 함수에 backbone 변수 추가해서 경우의 수 나누는 방식)
-    # TODO: MLFlow tracking
-    # TODO: Logger 추가
+    model_class = getattr(models, args.model)
+    dataset_class = SurvivalDataset
+    model_name = args.model
 
-    MODEL_SAVE_PATH = os.path.join(MODEL_DIR, model_class.__name__ + '.pth')
+    if model_name in ['DeepSurv', 'DynamicDeepSurv']:
+        backend = 'torch'
+        ext = '.pth'
+    else:
+        backend = 'sksurv'
+        ext = '.pkl'
 
-    train_objective = get_objective(dataset_file, model_class, dataset_class)
-    study = optuna.create_study(direction="maximize",
-                                sampler=optuna.samplers.TPESampler(seed=42))
-    study.optimize(train_objective, n_trials=NB_TRIALS)
+    if model_name == 'DynamicDeepSurv':
+        dataset_class = SurvivalDataset2  # dataset for sequence predictions
 
-    # Load weights and Bootstrap Test
-    test_ds = SurvivalDataset(dataset_file, is_train=False)
-    data = dataset_class(dataset_file, is_train=True)
-    if model_class.__name__ == 'DeepSurv':
-        model = model_class(data.ndim, study.best_trial)
-    elif model_class.__name__ == 'DynamicDeepSurv':
-        model = model_class(data.ndim, data.max_length, study.best_trial)
+    logger = create_logger(logs_dir=os.path.join('logs', model_class.__name__))
+    MODEL_SAVE_PATH = os.path.join(MODEL_DIR, model_class.__name__ + ext)
 
-    model.load_state_dict(torch.load(MODEL_SAVE_PATH)['model'])
-    model.to(device)
+    headers = []
+    values = []
 
-    result = bootstrap_eval(model, test_ds, device=device, nb_bootstrap=100)
-    print()
-    print(
-        f"\r[Test]: {result['mean']:.8f} [{result['confidence_interval'][0]:.8f}, {result['confidence_interval'][1]:.8f}] (95% CI)")
+    for name, dataset_file in data_info:
+        logger.info(f'Running {name}...')
+        train_objective = get_objective(dataset_file, model_class, dataset_class, backend)
+        study = optuna.create_study(direction="maximize",
+                                    sampler=optuna.samplers.TPESampler(seed=42))
+        study.optimize(train_objective, n_trials=NB_TRIALS)
+
+        # Bootstrap Test
+        if backend == 'torch':
+            test_ds = SurvivalDataset(dataset_file, is_train=False)
+            data = dataset_class(dataset_file, is_train=True)
+            if model_class.__name__ == 'DeepSurv':
+                model = model_class(data.ndim, study.best_trial)
+            elif model_class.__name__ == 'DynamicDeepSurv':
+                model = model_class(data.ndim, data.max_length, study.best_trial)
+
+            model.load_state_dict(torch.load(MODEL_SAVE_PATH)['model'])
+            model.to(device)
+
+            result = bootstrap_eval_torch(model, test_ds, device=device, nb_bootstrap=100)
+        elif backend == 'sksurv':
+            model = joblib.load(MODEL_SAVE_PATH)  # model load
+            test_data = dataset_class(dataset_file, is_train=False)
+            result = bootstrap_eval_sksurv(model, test_data, nb_bootstrap=100)
+
+        logger.info(
+            f"[Test]: {result['mean']:.6f} [{result['confidence_interval'][0]:.6f}, {result['confidence_interval'][1]:.6f}] (95% CI)")
+        logger.info('')
+
+        headers.append(name)
+        values.append(
+            f"{result['mean']:.6f} ({result['confidence_interval'][0]:.6f},{result['confidence_interval'][1]:.6f})")
+
+    tb = pt.PrettyTable()
+    tb.field_names = headers
+    tb.add_row(values)
+    logger.info(tb)

@@ -5,19 +5,21 @@ import numpy as np
 import torch
 
 
+def read_h5_file(h5_file, is_train):
+    split = 'train' if is_train else 'test'
+    with h5py.File(h5_file, 'r') as f:
+        X = f[split]['x'][()]
+        e = f[split]['e'][()].reshape(-1, 1)
+        y = f[split]['t'][()].reshape(-1, 1)
+    return X, e, y
+
+
 class SurvivalDataset(torch.utils.data.Dataset):
     def __init__(self, h5_file, is_train):
         super().__init__()
-        self.X, self.e, self.y = self._read_h5_file(h5_file, is_train)
+        self.X, self.e, self.y = read_h5_file(h5_file, is_train)
         self._normalize()
 
-    def _read_h5_file(self, h5_file, is_train):
-        split = 'train' if is_train else 'test'
-        with h5py.File(h5_file, 'r') as f:
-            X = f[split]['x'][()]
-            e = f[split]['e'][()].reshape(-1, 1)
-            y = f[split]['t'][()].reshape(-1, 1)
-        return X, e, y
 
     def _normalize(self):
         self.X = (self.X - self.X.mean(axis=0)) / self.X.std(axis=0)

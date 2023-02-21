@@ -1,10 +1,23 @@
+import logging
+import os
+import time
+
 import numpy as np
+import pandas as pd
 import torch
 from lifelines.utils import concordance_index
 from torch.utils.data import Subset, DataLoader
 import scipy.stats as st
 
 import random
+
+
+def to_sksurv_format(e, y):
+    e = e.astype(bool)
+    y = y.astype(float)
+    df = pd.DataFrame(np.c_[e, y], columns=['e', 'y'])
+    df['e'] = df['e'].astype(bool)
+    return pd.DataFrame.to_records(df, index=False)
 
 
 def seed_all(random_seed=42):
@@ -38,6 +51,7 @@ def c_index(risk_pred, y, e):
         e = e.detach().cpu().numpy()
     return concordance_index(y, risk_pred, e)
 
+
 def adjust_learning_rate(optimizer, epoch, lr, lr_decay_rate):
     ''' Adjusts learning rate according to (epoch, lr and lr_decay_rate)
     :param optimizer: (torch.optim object)
@@ -47,8 +61,9 @@ def adjust_learning_rate(optimizer, epoch, lr, lr_decay_rate):
     :return lr_: (float) updated learning rate
     '''
     for param_group in optimizer.param_groups:
-        param_group['lr'] = lr / (1+epoch*lr_decay_rate)
+        param_group['lr'] = lr / (1 + epoch * lr_decay_rate)
     return optimizer.param_groups[0]['lr']
+
 
 class AverageMeter():
     def __init__(self):
@@ -68,7 +83,7 @@ class AverageMeter():
 
 
 @torch.no_grad()
-def bootstrap_eval(model, test_ds, device, nb_bootstrap=100):
+def bootstrap_eval_torch(model, test_ds, device, nb_bootstrap=100):
     model.eval()
 
     nb_samples = len(test_ds)
@@ -95,3 +110,50 @@ def bootstrap_eval(model, test_ds, device, nb_bootstrap=100):
         'mean': mean,
         'confidence_interval': conf_interval
     }
+
+
+def bootstrap_eval_sksurv(model, test_data, nb_bootstrap=100):
+    X_test, e_test, y_test = test_data.X, test_data.e, test_data.y
+    Y_test = to_sksurv_format(e_test, y_test)
+
+    metrics = []
+    for i in range(nb_bootstrap):
+        metrics.append(model.score(X_test, Y_test))
+
+    # Find mean and 95% confidence interval
+    mean = np.mean(metrics)
+    conf_interval = st.t.interval(0.95, len(metrics) - 1, loc=mean, scale=st.sem(metrics))
+    return {
+        'mean': mean,
+        'confidence_interval': conf_interval
+    }
+
+def create_logger(logs_dir):
+    ''' Performs creating logger
+    :param logs_dir: (String) the path of logs
+    :return logger: (logging object)
+    '''
+    os.makedirs(logs_dir, exist_ok=True)
+    # logs settings
+    log_file = os.path.join(logs_dir,
+                            time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time())) + '.log')
+
+    # initialize logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(level=logging.INFO)
+
+    # initialize handler
+    handler = logging.FileHandler(log_file)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+    # initialize console
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+
+    # builds logger
+    logger.addHandler(handler)
+    logger.addHandler(console)
+
+    return logger
