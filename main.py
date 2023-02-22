@@ -184,12 +184,14 @@ if __name__ == '__main__':
         dataset_class = SurvivalDataset2  # dataset for sequence predictions
 
     logger = create_logger(logs_dir=os.path.join('logs', model_class.__name__))
-    MODEL_SAVE_PATH = os.path.join(MODEL_DIR, model_class.__name__ + ext)
 
     headers = []
     values = []
 
     for name, dataset_file in data_info:
+        MODEL_SAVE_PATH = os.path.join(MODEL_DIR, name, model_class.__name__ + ext)
+        os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
+
         logger.info(f'Running {name}...')
         train_objective = get_objective(dataset_file, model_class, dataset_class, backend)
         study = optuna.create_study(direction="maximize",
