@@ -124,9 +124,6 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
                 f'\rEpoch: {epoch}\tLoss: {train_loss:.8f}({valid_loss:.8f})\tc-index: {train_score:.8f}({valid_score:.8f})',
                 end='', flush=False)
 
-            # tb_writer.add_scalars(f"{trial_id}/loss", {'train': train_loss, 'valid': valid_loss}, epoch)
-            # tb_writer.add_scalars(f"{trial_id}/c-index", {'train': train_score, 'valid': valid_score}, epoch)
-
             train_writer.add_scalar(f"{trial_id}/loss", train_loss, epoch)
             valid_writer.add_scalar(f"{trial_id}/loss", valid_loss, epoch)
             train_writer.add_scalar(f"{trial_id}/c-index", train_score, epoch)
@@ -181,7 +178,7 @@ if __name__ == '__main__':
     EPOCHS = args.epochs
     NB_TRIALS = args.trials
     MODEL_DIR = './model_dir'
-    PATIENCE = 1
+    PATIENCE = 50
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     data_info = [
