@@ -11,10 +11,19 @@ import joblib
 from utils import AverageMeter, c_index, bootstrap_eval_torch, assign_device, seed_all, adjust_learning_rate, \
     to_sksurv_format, bootstrap_eval_sksurv, create_logger
 import prettytable as pt
+from torch.utils.tensorboard import SummaryWriter
 
 
 def get_objective(dataset_file, model_class, dataset_class, backend):
+    if backend == 'torch':
+        # tensorboard logger
+        dataset_name = os.path.basename(os.path.dirname(dataset_file))
+        log_dir = os.path.join('tb_logs', model_class.__name__, dataset_name)
+        train_writer = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
+        valid_writer = SummaryWriter(log_dir=os.path.join(log_dir, 'valid'))
+
     def objective_torch(trial):
+        trial_id = f"trial_{study.trials[-1].number}"
 
         seed_all(42)
 
@@ -99,6 +108,10 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
                 es_count += 1
                 if es_count >= PATIENCE:
                     print(f"\nEarly Stopping with best_score={best_score:.8f}...")
+                    hparams = trial.params
+                    hparams['name'] = trial_id
+                    train_writer.add_hparams(hparams,
+                                          {'valid_cindex': best_score})
                     return best_score
 
             trial_score = trial.study.best_value if len(trial.study.trials) > 1 else 0.0
@@ -110,6 +123,11 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
             print(
                 f'\rEpoch: {epoch}\tLoss: {train_loss:.8f}({valid_loss:.8f})\tc-index: {train_score:.8f}({valid_score:.8f})',
                 end='', flush=False)
+
+            train_writer.add_scalar(f"{trial_id}/loss", train_loss, epoch)
+            valid_writer.add_scalar(f"{trial_id}/loss", valid_loss, epoch)
+            train_writer.add_scalar(f"{trial_id}/c-index", train_score, epoch)
+            valid_writer.add_scalar(f"{trial_id}/c-index", valid_score, epoch)
 
         print()
         return best_score
