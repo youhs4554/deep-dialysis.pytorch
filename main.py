@@ -105,11 +105,7 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
 
             # Save best trial's model only
             if (valid_score > trial_score) and (best_score == valid_score):
-                torch.save({
-                    'model': model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'epoch': epoch}, MODEL_SAVE_PATH
-                )
+                torch.save(model, MODEL_SAVE_PATH)
 
             print(
                 f'\rEpoch: {epoch}\tLoss: {train_loss:.8f}({valid_loss:.8f})\tc-index: {train_score:.8f}({valid_score:.8f})',
@@ -204,12 +200,7 @@ if __name__ == '__main__':
         if backend == 'torch':
             test_ds = SurvivalDataset(dataset_file, is_train=False)
             data = dataset_class(dataset_file, is_train=True)
-            if model_class.__name__ == 'DeepSurv':
-                model = model_class(data.ndim, study.best_trial)
-            elif model_class.__name__ == 'DynamicDeepSurv':
-                model = model_class(data.ndim, data.max_length, study.best_trial)
-
-            model.load_state_dict(torch.load(MODEL_SAVE_PATH)['model'])
+            model = torch.load(MODEL_SAVE_PATH)
             model.to(device)
 
             result = bootstrap_eval_torch(model, test_ds, device=device, nb_bootstrap=100)
