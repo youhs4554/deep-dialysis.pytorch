@@ -177,3 +177,6 @@ data/
 
 # model files
 model_dir/
+
+# tensorboard logs
+tb_logs/
