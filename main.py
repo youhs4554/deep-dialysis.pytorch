@@ -42,7 +42,9 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
         elif model_class.__name__ == 'DynamicDeepSurv':
             model = model_class(data.ndim, data.max_length, trial)
             criterion = models.EventLoss(alpha=trial.suggest_float('criterion__alpha', 0.0, 10.0),
-                                         beta=trial.suggest_float('criterion__beta', 0.0, 10.0))
+                                         beta=trial.suggest_float('criterion__beta', 0.0, 10.0),
+                                         gamma=trial.suggest_float('criterion__gamma', 0.0, 10.0),
+                                         )
 
         base_lr = trial.suggest_float("base_lr", 1e-4, 5e-3)
         lr_decay_rate = trial.suggest_float("lr_decay_rate", 1e-4, 1e-2)

@@ -163,7 +163,7 @@ class ConLoss(nn.Module):
 
 
 class EventLoss(nn.Module):
-    def __init__(self, alpha, beta):
+    def __init__(self, alpha, beta, gamma):
         super().__init__()
         self.criterion1 = NegativeLogLikelihood()
         self.criterion2 = nn.BCELoss()
@@ -171,15 +171,19 @@ class EventLoss(nn.Module):
 
         self.alpha = alpha
         self.beta = beta
+        self.gamma = gamma
 
     def forward(self, risk_pred, event_seq, y, e, s):
-        risk_score = e.squeeze(1) * torch.diag(event_seq[:, s.argmax(1)])
+        risk_score = e.squeeze(1) * torch.diag(event_seq[:, s.argmax(1)]) # for uncensored cases
+        surv = 1.0 - risk_score
+        c = 1.0 - e.view(-1) # censored(=1) or not(=0)
 
         loss1 = self.criterion1(risk_pred, y, e)  # NegativeLogLikelihood (used in DeepSurv)
         loss2 = self.criterion2(event_seq, s)  # BCE (event sequence prediction)
         loss3 = self.criterion3(risk_score, y, e)  # ConLoss (1.0 - cindex)
+        loss4 = self.criterion2(surv, c) # Consider both censored and uncensored NLL
 
-        return loss1 + self.alpha * loss2 + self.beta * loss3
+        return loss1 + self.alpha * loss2 + self.beta * loss3 + self.gamma * loss4
 
 
 def CPH(trial):
