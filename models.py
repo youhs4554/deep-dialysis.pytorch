@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -174,13 +175,22 @@ class EventLoss(nn.Module):
         self.gamma = gamma
 
     def forward(self, risk_pred, event_seq, y, e, s):
-        risk_score = e.squeeze(1) * torch.diag(event_seq[:, s.argmax(1)]) # for uncensored cases
-        surv = 1.0 - risk_score
+        risk_time_score = e.squeeze(1) * torch.diag(event_seq[:, s.argmax(1)]) # for uncensored cases
+
+        # select time to event scores
+        tte_len = s.argmax(1)
+
+        # time-to-event masking
+        mask = torch.zeros_like(s)
+        mask[range(s.size(0)), tte_len] = 1.0
+        mask = mask.cumsum(1)
+        mask = 1.0 - mask
+        surv = (1.0 - event_seq * mask).prod(dim=1) # survival rate
         c = 1.0 - e.view(-1) # censored(=1) or not(=0)
 
         loss1 = self.criterion1(risk_pred, y, e)  # NegativeLogLikelihood (used in DeepSurv)
         loss2 = self.criterion2(event_seq, s)  # BCE (event sequence prediction)
-        loss3 = self.criterion3(risk_score, y, e)  # ConLoss (1.0 - cindex)
+        loss3 = self.criterion3(risk_time_score, y, e)  # ConLoss (1.0 - cindex)
         loss4 = self.criterion2(surv, c) # Consider both censored and uncensored NLL
 
         return loss1 + self.alpha * loss2 + self.beta * loss3 + self.gamma * loss4
