@@ -1,7 +1,37 @@
+import math
+
 import torch
+from torch import Tensor
 import torch.nn as nn
 from lifelines.utils import concordance_index
 from torch.autograd import Variable
+
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        if d_model % 2:
+            d_model += 1
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+        """
+        x = x.permute(1,0,2) # [seq_len, batch_size, embedding_dim]
+        x = x + self.pe[:x.size(0), :, :x.size(2)]
+        x = self.dropout(x)
+        x = x.permute(1,0,2) # [batch_size, seq_len, embedding_dim]
+        return x
 
 
 class DenseBlock(nn.Sequential):
@@ -78,12 +108,14 @@ class DynamicDeepSurv(nn.Module):
         self.static = DeepSurv(in_feats, trial)
         hidden_units = self.static.fc.in_features
         self.dynamic = self._build_model(hidden_units, trial)
+        self.pos_encoder = PositionalEncoding(hidden_units,
+                                              dropout=trial.suggest_float('PE__dropout', 0.0, 0.5))
 
         self.max_length = max_length
 
     def _build_model(self, in_feats, trial):
         return GRU(
-            input_size=in_feats+1,
+            input_size=in_feats,
             output_size=1,
             hidden_size=trial.suggest_int("rnn__units", 32, 256),
             num_layers=trial.suggest_int("rnn__n_layers", 1, 4),
@@ -94,9 +126,8 @@ class DynamicDeepSurv(nn.Module):
         feats = self.static.get_feature(x)
         risk_pred = self.static.fc(feats)
         seq = feats.unsqueeze(1).tile(1, self.max_length, 1)
-        t = torch.arange(self.max_length, device=x.device).unsqueeze(0).unsqueeze(2).tile(x.size(0), 1, 1)
-        seq_t = torch.cat((seq, t), dim=2)
-        event_seq = self.dynamic(seq_t)
+        seq = self.pos_encoder(seq) # positional encoded
+        event_seq = self.dynamic(seq)
         return {'risk_pred': risk_pred, 'event_seq': event_seq}
 
 
