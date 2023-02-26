@@ -180,3 +180,9 @@ model_dir/
 
 # tensorboard logs
 tb_logs/
+
+# model checkpoints
+*/checkpoints/*
+
+# .pt files
+*.pt

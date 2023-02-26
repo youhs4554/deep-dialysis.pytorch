@@ -1,5 +1,7 @@
 from collections import defaultdict
-from sksurv.metrics import concordance_index_ipcw, brier_score
+
+from pycox.evaluation import EvalSurv
+from sksurv.metrics import concordance_index_ipcw, brier_score, cumulative_dynamic_auc
 import numpy as np
 import pdb
 
@@ -23,28 +25,35 @@ class Evaluator:
         df_test, df_y_test = test_set
         surv = model.predict_surv(df_test, batch_size=val_batch_size)
         risk = 1 - surv
-        
+
         durations_test, events_test = get_target(df_y_test)
         et_test = np.array([(events_test[i], durations_test[i]) for i in range(len(events_test))],
                     dtype = [('e', bool), ('t', float)])
+
+        surv_df = model.predict_surv_df(df_test)
+        ev = EvalSurv(surv_df, durations_test, events_test, censor_surv='km')
+        ctd = ev.concordance_td('antolini')
+        print("C-td: ", ctd)
 
         metric_dict = defaultdict(list)
         brs = brier_score(et_train, et_test, surv.to("cpu").numpy()[:,1:-1], times)[1]
 
         cis = []
+        aucs = []
         for i, _ in enumerate(times):
             cis.append(
                 concordance_index_ipcw(et_train, et_test, estimate=risk[:, i+1].to("cpu").numpy(), tau=times[i])[0]
                 )
+            aucs.append(cumulative_dynamic_auc(et_train, et_test, risk[:, i+1].to("cpu").numpy(), times[i])[0].item())
             metric_dict[f'{horizons[i]}_ipcw'] = cis[i]
             metric_dict[f'{horizons[i]}_brier'] = brs[i]
-
+            metric_dict[f'{horizons[i]}_auroc'] = aucs[i]
 
         for horizon in enumerate(horizons):
             print(f"For {horizon[1]} quantile,")
             print("TD Concordance Index - IPCW:", cis[horizon[0]])
             print("Brier Score:", brs[horizon[0]])
-        
+            print("Dynamic AUC: ", aucs[horizon[0]])
         return metric_dict
 
     def eval_multi(self, model, test_set, val_batch_size=10000):
@@ -58,7 +67,7 @@ class Evaluator:
         for risk_idx in range(model.config.num_event):
             durations_train, events_train = get_target(df_train_all, risk_idx)
             durations_test, events_test = get_target(df_y_test, risk_idx)
-            
+
             surv = model.predict_surv(df_test, batch_size=val_batch_size, event=risk_idx)
             risk = 1 - surv
 
@@ -70,7 +79,7 @@ class Evaluator:
             brs = brier_score(et_train, et_test, surv.to("cpu").numpy()[:,1:-1], times)[1]
             cis = []
             for i, _ in enumerate(times):
-                cis.append(concordance_index_ipcw(et_train, et_test, risk[:, i+1].to("cpu").numpy(), times[i])[0])            
+                cis.append(concordance_index_ipcw(et_train, et_test, risk[:, i+1].to("cpu").numpy(), times[i])[0])
                 metric_dict[f'{horizons[i]}_ipcw_{risk_idx}'] = cis[i]
                 metric_dict[f'{horizons[i]}_brier_{risk_idx}'] = brs[i]
 
@@ -78,7 +87,7 @@ class Evaluator:
                 print("Event: {} For {} quantile,".format(risk_idx,horizon[1]))
                 print("TD Concordance Index - IPCW:", cis[horizon[0]])
                 print("Brier Score:", brs[horizon[0]])
-        
+
         return metric_dict
 
     def eval(self, model, test_set, confidence=None, val_batch_size=None):
@@ -102,7 +111,7 @@ class Evaluator:
             for i in range(10):
                 df_test = test_set[0].sample(test_set[0].shape[0], replace=True)
                 df_y_test = test_set[1].loc[df_test.index]
-                
+
                 if model.config['num_event'] > 1:
                     res_dict = self.eval_multi(model, (df_test, df_y_test), val_batch_size)
                 else:

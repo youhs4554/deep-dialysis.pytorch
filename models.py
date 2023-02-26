@@ -83,7 +83,7 @@ class DynamicDeepSurv(nn.Module):
 
     def _build_model(self, in_feats, trial):
         return GRU(
-            input_size=in_feats,
+            input_size=in_feats+1,
             output_size=1,
             hidden_size=trial.suggest_int("rnn__units", 32, 256),
             num_layers=trial.suggest_int("rnn__n_layers", 1, 4),
@@ -93,7 +93,10 @@ class DynamicDeepSurv(nn.Module):
     def forward(self, x):
         feats = self.static.get_feature(x)
         risk_pred = self.static.fc(feats)
-        event_seq = self.dynamic(torch.unsqueeze(feats, 1).repeat(1, self.max_length, 1))
+        seq = feats.unsqueeze(1).tile(1, self.max_length, 1)
+        t = torch.arange(self.max_length).unsqueeze(0).unsqueeze(2).tile(x.size(0), 1, 1)
+        seq_t = torch.cat((seq, t), dim=2)
+        event_seq = self.dynamic(seq_t)
         return {'risk_pred': risk_pred, 'event_seq': event_seq}
 
 
