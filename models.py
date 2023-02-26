@@ -124,7 +124,8 @@ class DynamicDeepSurv(nn.Module):
 
     def forward(self, x):
         feats = self.static.get_feature(x)
-        risk_pred = self.static.fc(feats)
+        out = self.static.fc(feats)
+        risk_pred = nn.functional.softplus(out)
         seq = feats.unsqueeze(1).tile(1, self.max_length, 1)
         seq = self.pos_encoder(seq) # positional encoded
         event_seq = self.dynamic(seq)
