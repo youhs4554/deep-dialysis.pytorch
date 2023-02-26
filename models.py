@@ -94,7 +94,7 @@ class DynamicDeepSurv(nn.Module):
         feats = self.static.get_feature(x)
         risk_pred = self.static.fc(feats)
         seq = feats.unsqueeze(1).tile(1, self.max_length, 1)
-        t = torch.arange(self.max_length).unsqueeze(0).unsqueeze(2).tile(x.size(0), 1, 1)
+        t = torch.arange(self.max_length, device=x.device).unsqueeze(0).unsqueeze(2).tile(x.size(0), 1, 1)
         seq_t = torch.cat((seq, t), dim=2)
         event_seq = self.dynamic(seq_t)
         return {'risk_pred': risk_pred, 'event_seq': event_seq}
