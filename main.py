@@ -57,6 +57,7 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
         loss_meter = AverageMeter()
         score_meter = AverageMeter()
         best_score = 0.0
+        best_model = model
         es_count = 0
 
         for epoch in range(EPOCHS):
@@ -105,6 +106,7 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
 
             if valid_score > best_score:
                 best_score = valid_score
+                best_model = model
                 es_count = 0
             else:
                 es_count += 1
@@ -120,7 +122,8 @@ def get_objective(dataset_file, model_class, dataset_class, backend):
 
             # Save best trial's model only
             if (valid_score > trial_score) and (best_score == valid_score):
-                torch.save(model, MODEL_SAVE_PATH)
+                print(f'\nSaving best model with valid_score:{best_score:.8f}')
+                torch.save(best_model, MODEL_SAVE_PATH)
 
             print(
                 f'\rEpoch: {epoch}\tLoss: {train_loss:.8f}({valid_loss:.8f})\tc-index: {train_score:.8f}({valid_score:.8f})',
