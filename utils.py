@@ -116,9 +116,15 @@ def bootstrap_eval_sksurv(model, test_data, nb_bootstrap=100):
     X_test, e_test, y_test = test_data.X, test_data.e, test_data.y
     Y_test = to_sksurv_format(e_test, y_test)
 
+    nb_samples = len(test_data)
     metrics = []
+    def resample():
+        indices = np.random.choice(range(nb_samples), nb_samples, replace=True)
+        return X_test[indices], Y_test[indices]
+
     for i in range(nb_bootstrap):
-        metrics.append(model.score(X_test, Y_test))
+        X_test_res, Y_test_res = resample()
+        metrics.append(model.score(X_test_res, Y_test_res))
 
     # Find mean and 95% confidence interval
     mean = np.mean(metrics)
