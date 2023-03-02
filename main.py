@@ -187,10 +187,11 @@ if __name__ == '__main__':
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     data_info = [
-        ('WHAS', './data/whas/whas_train_test.h5'),
-        ('SUPPORT', './data/support/support_train_test.h5'),
+        #('WHAS', './data/whas/whas_train_test.h5'),
+        #('SUPPORT', './data/support/support_train_test.h5'),
         ('METABRIC', './data/metabric/metabric_IHC4_clinical_train_test.h5'),
-        ('Rotterdam & GBSG', './data/gbsg/gbsg_cancer_train_test.h5')]
+        #('Rotterdam & GBSG', './data/gbsg/gbsg_cancer_train_test.h5')
+    ]
 
     model_class = getattr(models, args.model)
     dataset_class = SurvivalDataset
