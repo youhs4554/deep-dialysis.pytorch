@@ -64,8 +64,9 @@ class DRSA(nn.Module):
             self.n_layers,
             batch_first=True,
             dropout=LSTM_dropout,
+            bidirectional=True
         )
-        self.fc = nn.Linear(hidden_dim, output_size)
+        self.fc = nn.Linear(2*hidden_dim, output_size)
         self.linear_dropout = nn.Dropout(p=Linear_dropout)
         self.sigmoid = nn.Sigmoid()
 
